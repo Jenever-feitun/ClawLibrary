@@ -145,7 +145,7 @@ Nginx 转发完整应用，包括 `/api/openclaw/*`，避免仅托管静态文�
 
 每个环境独立记录 `runtime/nginx.conf`、`runtime/nginx.pid`、`runtime/app.pid` 以及 `runtime/logs/{app,access,error}.log`。应用通过 `setsid` 脱离当前任务，Nginx 自身 daemon 化；无进程监督器，仅尽力维持运行，不提供崩溃自动重启。容器销毁后服务及本地文件不保留。
 
-Nginx 监听 `0.0.0.0:8081/8082`，上游仍仅监听 loopback；外部能否访问取决于容器网络及端口映射，不代表已配置公网路由、防火墙或 TLS。非本机请求需要 Basic 认证：用户名 `clawlibrary`，每套环境独立生成密码，保存在 `runtime/access-password`，可在容器中执行 `cat ~/ClawLibrary/dev/runtime/access-password` 查看（prod 同理）。不要提交或公开密码文件；本机健康检查免认证。HTTP Basic 不加密，请使用可信网络或 TLS/SSH 隧道访问。Nginx 固定上游 Host 为 localhost，避免外部域名被 Vite 拒绝。
+Nginx 监听 `0.0.0.0:8081/8082`，上游仍仅监听 loopback；外部能否访问取决于容器网络及端口映射，不代表已配置公网路由、防火墙或 TLS。非本机请求需要 Basic 认证：用户名 `admin`，每套环境独立生成密码，保存在 `runtime/access-password`，可在容器中执行 `cat ~/ClawLibrary/dev/runtime/access-password` 查看（prod 同理）。重新部署时会将旧账号 `clawlibrary` 迁移为 `admin`，保留原密码哈希和密码文件。已有环境也可执行 `bash scripts/environment-auth.sh ~/ClawLibrary/dev/runtime`（prod 同理）单独迁移，无需重新构建或重启，Nginx 在后续请求中读取更新的认证文件。不要提交或公开密码文件；本机健康检查免认证。HTTP Basic 不加密，请使用可信网络或 TLS/SSH 隧道访问。Nginx 固定上游 Host 为 localhost，避免外部域名被 Vite 拒绝。
 
 更新时先停止对应环境，再重新 `prepare` 和 `start`；会覆盖项目文件但保留运行日志。复制不包含 `.env`、Git 元数据、开发目录的依赖和构建产物，不要将凭据放进其他源码文件。可通过 `CLAWLIBRARY_ENV_ROOT` 更改根目录（绝对路径、不含空格），`NGINX_BIN` 指定 Nginx。默认两套环境读取同一份 OpenClaw 数据，若需数据隔离，分别配置部署目录中的 `clawlibrary.config.json`。不要从部署副本本身运行初始化。
 
