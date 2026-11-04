@@ -30,12 +30,8 @@ case "$ACTION" in
     # No credentials, Git metadata, runtime logs or developer dependencies copied.
     tar -C "$SOURCE" --exclude=.git --exclude=node_modules --exclude=dist --exclude=tmp --exclude=./.env --exclude=./runtime -cf - . | tar -C "$DIR" -xf -
     (cd "$DIR" && npm ci --include=dev && npm run build)
-    # Preserve generated credentials across redeployments; never copy them into Git.
-    if [[ ! -s "$RUNTIME/htpasswd" ]]; then
-      umask 077
-      openssl rand -hex 18 > "$RUNTIME/access-password"
-      printf 'clawlibrary:%s\n' "$(openssl passwd -apr1 -stdin < "$RUNTIME/access-password")" > "$RUNTIME/htpasswd"
-    fi
+    # Preserve passwords/hashes; migrate only the old Basic-auth username to admin.
+    bash "$SOURCE/scripts/environment-auth.sh" "$RUNTIME"
     cat > "$RUNTIME/nginx.conf" <<CONF
 worker_processes 1;
 pid $RUNTIME/nginx.pid;
