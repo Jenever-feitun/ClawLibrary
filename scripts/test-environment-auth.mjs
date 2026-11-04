@@ -13,8 +13,8 @@ const runtime = path.join(fixture, 'runtime');
 const password = 'test-only-owner-password';
 const nginx = process.env.NGINX_BIN || '/usr/sbin/nginx';
 let server;
-function migrate(ok = true) {
-  const result = spawnSync('bash', [path.join(root, 'scripts/environment-auth.sh'), runtime], { encoding: 'utf8' });
+function migrate(ok = true, ...args) {
+  const result = spawnSync('bash', [path.join(root, 'scripts/environment-auth.sh'), runtime, ...args], { encoding: 'utf8' });
   assert.equal(result.status === 0, ok, result.stderr);
 }
 const request = (port, username, localAddress = '127.0.0.2') => new Promise((resolve, reject) => {
@@ -59,7 +59,28 @@ try {
     migrate(false);
     assert.equal(await fs.readFile(path.join(runtime, 'htpasswd'), 'utf8'), invalid);
   }
+  // Explicit synchronization refuses invalid accounts, absent or empty passwords.
+  migrate(false, '--sync-password');
   await fs.writeFile(path.join(runtime, 'htpasswd'), customized, { mode: 0o600 });
+  migrate(false, '--sync-password');
+  await fs.writeFile(path.join(runtime, 'access-password'), '');
+  migrate(false, '--sync-password');
+  assert.equal(await fs.readFile(path.join(runtime, 'htpasswd'), 'utf8'), customized);
+  // Reproduce password-file drift: normal migration preserves the old hash;
+  // only the explicitly authorized operation updates it to the recorded password.
+  await fs.writeFile(path.join(runtime, 'access-password'), password + '-changed\n');
+  migrate();
+  assert.equal(await fs.readFile(path.join(runtime, 'htpasswd'), 'utf8'), customized);
+  migrate(true, '--sync-password');
+  const synced = await fs.readFile(path.join(runtime, 'htpasswd'), 'utf8');
+  assert.notEqual(synced, customized);
+  const syncedHash = synced.trim().split(':')[1];
+  const checked = spawnSync('openssl', ['passwd', '-apr1', '-salt', syncedHash.split('$')[2], '-stdin'], { input: password + '-changed\n', encoding: 'utf8' });
+  assert.equal(checked.status, 0);
+  assert.equal(checked.stdout.trim(), syncedHash);
+  assert.equal((await fs.stat(path.join(runtime, 'htpasswd'))).mode & 0o777, 0o600);
+  await fs.writeFile(path.join(runtime, 'access-password'), password + '\n');
+  migrate(true, '--sync-password');
   const listener = net.createServer();
   listener.listen(0, '127.0.0.1');
   await once(listener, 'listening');
@@ -104,7 +125,7 @@ http {
   assert.equal(await request(port, 'admin'), 200);
   assert.equal(await request(port, 'clawlibrary'), 401);
   assert.equal(await request(port, 'incorrect'), 401);
-  console.log('PASS: generation, custom password preservation, hash migration, idempotence, permissions, invalid-file protection; real Nginx: admin 200, legacy/no auth 401, local bypass 200');
+  console.log('PASS: generation, custom password preservation, hash migration, explicit password synchronization, drift protection, idempotence, permissions, invalid-file protection; real Nginx: admin 200, legacy/no auth 401, local bypass 200');
 } finally {
   if (server && server.exitCode === null) {
     const exited = once(server, 'exit');
