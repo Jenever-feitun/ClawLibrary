@@ -16,7 +16,7 @@ export const RESOURCE_LABELS: Record<string, Record<UiLocale, string>> = {
 };
 
 export const UI_TEXT = {
-  title: { en: 'ClawLibrary', zh: '龙虾图书馆' },
+  title: { en: 'hahahaha', zh: 'hahahaha' },
   recentActivity: { en: 'Recent Activity', zh: '最近活动' },
   noActivity: { en: 'No recent activity yet.', zh: '暂时还没有最近活动。' },
   archiveLive: { en: 'ARCHIVE LIVE', zh: '实时归档' },
