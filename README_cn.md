@@ -147,6 +147,8 @@ Nginx 转发完整应用，包括 `/api/openclaw/*`，避免仅托管静态文�
 
 Nginx 监听 `0.0.0.0:8081/8082`，上游仍仅监听 loopback；外部能否访问取决于容器网络及端口映射，不代表已配置公网路由、防火墙或 TLS。非本机请求需要 Basic 认证：用户名 `admin`，每套环境独立生成密码，保存在 `runtime/access-password`，可在容器中执行 `cat ~/ClawLibrary/dev/runtime/access-password` 查看（prod 同理）。重新部署时会将旧账号 `clawlibrary` 迁移为 `admin`，保留原密码哈希和密码文件。已有环境也可执行 `bash scripts/environment-auth.sh ~/ClawLibrary/dev/runtime`（prod 同理）单独迁移，无需重新构建或重启，Nginx 在后续请求中读取更新的认证文件。不要提交或公开密码文件；本机健康检查免认证。HTTP Basic 不加密，请使用可信网络或 TLS/SSH 隧道访问。Nginx 固定上游 Host 为 localhost，避免外部域名被 Vite 拒绝。
 
+若手动修改了 `runtime/access-password`，它不会自动改变 Nginx 使用的哈希。确认要将该文件作为新密码后，执行 `bash scripts/environment-auth.sh ~/ClawLibrary/dev/runtime --sync-password`（仅针对要修改的环境）。该操作保留密码文件、原子更新 admin 哈希并立即生效，旧密码失效，无需重启；缺失/空密码文件或未知/多账号认证文件会拒绝操作。默认迁移和重新部署仍保留原哈希，不会隐式重置密码。
+
 更新时先停止对应环境，再重新 `prepare` 和 `start`；会覆盖项目文件但保留运行日志。复制不包含 `.env`、Git 元数据、开发目录的依赖和构建产物，不要将凭据放进其他源码文件。可通过 `CLAWLIBRARY_ENV_ROOT` 更改根目录（绝对路径、不含空格），`NGINX_BIN` 指定 Nginx。默认两套环境读取同一份 OpenClaw 数据，若需数据隔离，分别配置部署目录中的 `clawlibrary.config.json`。不要从部署副本本身运行初始化。
 
 ## 开发命令
