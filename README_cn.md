@@ -110,6 +110,45 @@ cp .env.example .env
 - `OPENCLAW_HOME`
 - `OPENCLAW_WORKSPACE`
 
+## 临时 Linux 容器双环境
+
+| 环境 | 项目目录 | Nginx 访问地址（全部 IPv4 网卡） | 应用上游 |
+| --- | --- | --- | --- |
+| dev | `~/ClawLibrary/dev` | `http://<容器可达地址>:8081/` | `127.0.0.1:5181`，Vite dev |
+| prod | `~/ClawLibrary/prod` | `http://<容器可达地址>:8082/` | `127.0.0.1:5182`，构建产物 Vite preview |
+
+依赖 Linux、Bash、Node/npm、`setsid`、Nginx。必须从源码检出目录执行：
+
+```bash
+# 需要代理时使用；本机请求不走代理
+export HTTP_PROXY=http://192.168.5.140:7897 HTTPS_PROXY=http://192.168.5.140:7897
+export http_proxy="$HTTP_PROXY" https_proxy="$HTTPS_PROXY"
+export npm_config_proxy="$HTTP_PROXY" npm_config_https_proxy="$HTTPS_PROXY"
+export NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost
+# 工作区 daemon 执行 Git 时需要单独配置 Git 代理
+git config --global http.https://github.com/.proxy "$HTTPS_PROXY"
+# 先通过系统包管理器安装 nginx，再初始化两套独立源码/依赖/构建
+bash scripts/environments.sh prepare dev
+bash scripts/environments.sh prepare prod
+bash scripts/environments.sh start dev
+bash scripts/environments.sh start prod
+bash scripts/environments.sh test dev
+bash scripts/environments.sh test prod
+bash scripts/environments.sh status dev
+bash scripts/environments.sh status prod
+# 按需独立停止
+bash scripts/environments.sh stop dev
+bash scripts/environments.sh stop prod
+```
+
+Nginx 转发完整应用，包括 `/api/openclaw/*`，避免仅托管静态文件导致遥测接口失效。prod 使用构建产物及 Vite preview，适用于此次临时容器，不是加固后的生产后端。
+
+每个环境独立记录 `runtime/nginx.conf`、`runtime/nginx.pid`、`runtime/app.pid` 以及 `runtime/logs/{app,access,error}.log`。应用通过 `setsid` 脱离当前任务，Nginx 自身 daemon 化；无进程监督器，仅尽力维持运行，不提供崩溃自动重启。容器销毁后服务及本地文件不保留。
+
+Nginx 监听 `0.0.0.0:8081/8082`，上游仍仅监听 loopback；外部能否访问取决于容器网络及端口映射，不代表已配置公网路由、防火墙或 TLS。非本机请求需要 Basic 认证：用户名 `clawlibrary`，每套环境独立生成密码，保存在 `runtime/access-password`，可在容器中执行 `cat ~/ClawLibrary/dev/runtime/access-password` 查看（prod 同理）。不要提交或公开密码文件；本机健康检查免认证。HTTP Basic 不加密，请使用可信网络或 TLS/SSH 隧道访问。Nginx 固定上游 Host 为 localhost，避免外部域名被 Vite 拒绝。
+
+更新时先停止对应环境，再重新 `prepare` 和 `start`；会覆盖项目文件但保留运行日志。复制不包含 `.env`、Git 元数据、开发目录的依赖和构建产物，不要将凭据放进其他源码文件。可通过 `CLAWLIBRARY_ENV_ROOT` 更改根目录（绝对路径、不含空格），`NGINX_BIN` 指定 Nginx。默认两套环境读取同一份 OpenClaw 数据，若需数据隔离，分别配置部署目录中的 `clawlibrary.config.json`。不要从部署副本本身运行初始化。
+
 ## 开发命令
 
 ```bash

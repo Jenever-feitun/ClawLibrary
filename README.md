@@ -110,6 +110,41 @@ and set:
 - `OPENCLAW_HOME`
 - `OPENCLAW_WORKSPACE`
 
+## Two isolated Nginx environments (temporary Linux container)
+
+| Environment | Directory | Nginx URL (all IPv4 interfaces) | App upstream |
+| --- | --- | --- | --- |
+| dev | `~/ClawLibrary/dev` | `http://<container-host>:8081/` | `127.0.0.1:5181` (Vite dev) |
+| prod | `~/ClawLibrary/prod` | `http://<container-host>:8082/` | `127.0.0.1:5182` (built Vite preview) |
+
+Run from the source checkout on Linux with Bash, Node/npm, `setsid`, and Nginx installed. Preparation installs locked dependencies and builds each independent project copy. Both modes proxy the full application, including `/api/openclaw/*`; a static-only Nginx root would lose the telemetry API. Vite preview is suitable for this temporary container setup, not a hardened production backend.
+
+```bash
+# If outbound connectivity requires the provided proxy (keep loopback direct):
+export HTTP_PROXY=http://192.168.5.140:7897 HTTPS_PROXY=http://192.168.5.140:7897
+export http_proxy="$HTTP_PROXY" https_proxy="$HTTPS_PROXY"
+export npm_config_proxy="$HTTP_PROXY" npm_config_https_proxy="$HTTPS_PROXY"
+export NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost
+# Git invoked by the workspace daemon needs its own proxy setting:
+git config --global http.https://github.com/.proxy "$HTTPS_PROXY"
+# Install nginx with your Linux package manager first, if missing.
+bash scripts/environments.sh prepare dev
+bash scripts/environments.sh prepare prod
+bash scripts/environments.sh start dev
+bash scripts/environments.sh start prod
+bash scripts/environments.sh test dev
+bash scripts/environments.sh test prod
+bash scripts/environments.sh status dev
+bash scripts/environments.sh status prod
+# Stop only the selected environment:
+bash scripts/environments.sh stop dev
+bash scripts/environments.sh stop prod
+```
+
+Each environment owns `runtime/nginx.conf`, `runtime/nginx.pid`, `runtime/app.pid`, and `runtime/logs/{app,access,error}.log`. Processes detach using `setsid` / Nginx daemon mode with persistent local logs; without a supervisor survival is best-effort and there is no automatic restart. Container deletion removes both environments. Nginx listens on `0.0.0.0:8081/8082`; upstreams remain loopback-only. Actual external reachability still depends on container networking and port publishing. Non-loopback requests require Basic authentication: username `clawlibrary`, a separately generated password per environment in `runtime/access-password` (read locally with `cat ~/ClawLibrary/dev/runtime/access-password`, or substitute `prod`). Never commit or publish that file. Loopback checks bypass authentication. Basic authentication over HTTP is not encrypted: use a trusted network or TLS/SSH tunnel; this does not configure Internet routing, TLS, or firewall rules. Nginx pins the upstream Host to localhost so Vite accepts external proxy requests.
+
+Stop an environment before running `prepare` again to deploy updated source; preparation overwrites tracked project files but preserves runtime logs. Do not store credentials in deployed source: `.env`, Git metadata and developer `node_modules` are excluded from copying. Optional `CLAWLIBRARY_ENV_ROOT` changes the base directory (absolute, no spaces); `NGINX_BIN` selects the Nginx executable. The two environments have separate code/builds/processes, but by default read the same OpenClaw data; configure each copy's `clawlibrary.config.json` for different data sources if needed. Do not prepare from a deployed copy itself.
+
 ## Development Commands
 
 ```bash
